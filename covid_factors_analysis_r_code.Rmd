@@ -1,0 +1,511 @@
+---
+title: "ECON 2509 Final Project Report"
+subtitle: "What factors contribute to the spread of Covid-19 in the US?"
+author: 
+- "Sui Ying Crystal Law"
+- "Yan Miao"
+- "Zihao Li"
+
+output: 
+  bookdown::pdf_document2:
+    toc: false
+header-includes:
+   - \usepackage{floatrow}
+   - \floatsetup[figure]{capposition=top}
+---
+
+```{r, eval = TRUE, echo = FALSE}
+options(width = 100)
+```
+
+```{r, eval = TRUE, include = FALSE}
+library("readxl")
+library("ggplot2")
+library("GGally")
+library("regclass")
+library("mctest")
+library("car")
+library("effects")
+library("stargazer")
+library("ppcor")
+library("sandwich")
+library("dplyr")
+library("tidyr")
+library("plotly")
+library("RColorBrewer")
+library("bookdown")
+```
+
+```{r, eval = TRUE, echo = FALSE}
+df3 <- read_excel("~/Desktop/Econo_final_data3 (2).xlsx")
+df4 <- read_excel("~/Desktop/Econo_data_merge_final_1.xlsx")
+df5 <- read_excel("~/Desktop/Econo_data_merge_final_2.xlsx")
+
+
+df3$cases_binary <- factor(df3$cases_binary)
+df3$democrat <- factor(df3$democrat)
+df3$quarantine <- factor(df3$quarantine)
+df4$democrat <- factor(df4$democrat)
+df4$quarantine <- factor(df4$quarantine)
+df5$quarantine <- factor(df5$quarantine)
+
+df <- subset(df4,df4$cases_log > 0)
+```
+
+
+
+## Introduction {-}
+$$\\[1pt]$$
+COVID-19 is a rapidly spreading global pandemic. As of 1st December 2020, there were about 64 millions confirmed cases and 1.5 millions deaths worldwide. The United States of America takes up over one fifth of total global confirmed cases, recorded to have 13 millions cases so far.^[1](https://scholar.google.com/scholar?q=Johns+Hopkins+Track+Reported+Cases+of+COVID-19+Coronavirus+Resource+Center+2020+(WWW+Document,+online)+)^ While there are no vaccines and effective antivirals available, the most effective available interventions are national lockdowns and quarantines for local and global control and mitigation of COVID-19.^[2](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7184488/)^ Those interventions have changed our social lives in so many ways, as well as bringing consequences to our lives, and economy.^[3](https://hub.jhu.edu/2020/04/16/covid-19-2020-presidential-election-democratic-primary/)^
+
+Since Covid has such huge impact to our lives and economy, it is important to know factors actually contribute to the spread of it in US. This paper will be discussing a casual question - what factors contribute to the spread of Covid-19 in the US using multi-variable log-linear regression model.
+
+To evaluate the topic, we compiled data from official credible sources, such as CDC, National Centers For Environmental Information, and United States Census Bureau to discuss how average temperature, uninsured rate, percentage of older population and if the state enforces any travel restrictions or not are the factors contributing to spread of it in US. The multi-variable log-linear regression model has concluded that four of the above listed factors are statistically significant regressor contributing to spread of covid in US.
+
+
+## Data Description {-}
+
+$$\\[1pt]$$
+
+```{r glimpse-of-dataset, eval = TRUE, echo = FALSE}
+options(width = 120)
+knitr::kable(head(df5,30), "pipe", caption = "A Glimpse of the dataset")
+```
+
+**Note:** The above only shows the first 30 lines of the dataset. The full dataset is attached in page 19.
+
+|    Variable    | Variable Type |     Variable Description                                       |
+| -------------- | ------------- | -------------------------------------------------------------- |
+| `state`       |  Categorical  | The 49 states in the US                                        |
+| `month`        |  Discrete     | Month of January to October in year 2020                       |
+| `cases`        |  Discrete     | Total number of Covid confirmed cases per month by state       |
+| `cases_log`    |  Continuous   | Log of total number of Covid confirmed cases per month by state |
+| `avg_temp`     |  Continuous   | Average temperature per month by state                         |
+| `precipitation`|  Continuous   | Total precipitation per month by state                         |
+| `uninsured`    |  Continuous   | Uninsured rate of the state in the respective month            |
+| `older_pop`    |  Continuous   | Percentage of older population (65 years old +)                |
+| `quarantine`   |  Discrete     | Binary indicator if the state enforces any travel restrictions |
+
+Table: (\#tab:tbl1) Present variables, variable types and description
+
+
+```{r, eval = FALSE, echo = FALSE}
+variable <- c('state','month','cases','cases_log','avg_temp','precipitation','uninsured','older_pop', 'quarantine') 
+variable_type <- c('Categorical','Discrete','Discrete','Continuous','Continuous','Continuous',
+                   'Continuous','Continuous','Discrete')
+variable_description <- c('49 states in the US', 
+                      'Month of January to October in year 2020', 
+                      'Total number of Covid confirmed cases per month by state',
+                      'Log of total number of Covid confirmed cases per month by state', 
+                      'Average temperature per month by state', 
+                      'Total precipitation per month by state',
+                      'Unsured rate of the state in the respective month',
+                      'Percentage of older population (65 years old +) as of 2019/12', 
+                      'Binary indicator if the state enforces any travel restrictions')
+variable_df <- data.frame(variable  = variable , variable_type = variable_type, 
+                          variable_description = variable_description)
+names(variable_df)[1] <- "Variable"
+names(variable_df)[2] <- "Variable Type"
+names(variable_df)[3] <- "Variable Description" 
+```
+
+```{r, eval = FALSE, echo = FALSE}
+knitr::kable(variable_df)
+```
+**Note:** Travel restrictions include self-quarantine for 14 days after arrival, completion of travel health form, and/or proof of negative covid test results from a CLIA certified laboratory before arrival.
+
+### Data Collection Description {-}
+
+Since different states in the US have different geographical and demographic characteristics and policies, our data is based off every state by month. The time period covered was from January to October of the year 2020. All the data sources and important assumptions of out data are as follow:
+
+| Variable         | Sources                                        |
+| ---------------- | ---------------------------------------------- |
+| `cases`          | Centers of Disease Control and Prevention      |
+| `avg_temp`       | National Centers For Environmental Information |
+| `precipitation`  | National Centers For Environmental Information |
+| `uninsured`      | Urban Institute                                |
+| `older_pop`      | United States Census Bureau                    |
+| `quarantine`     | Centers of Disease Control and Prevention      |
+
+Table: Data sources
+
+
+```{r, eval = FALSE, echo = FALSE}
+variable <- c('cases','avg_temp','precipitation','uninsured', 'older_pop','quarantine') 
+variable_sources<- c('Centers of Disease Control and Prevention',
+                     'National Centers For Environmental Information',
+                     'National Centers For Environmental Information',
+                     'Urban Institute',
+                     'United States Census Bureau',
+                     'Centers of Disease Control and Prevention')
+variable_sources_df <- data.frame(variable = variable , variable_sources = variable_sources)
+names(variable_sources_df)[1] <- "Variable"
+names(variable_sources_df)[2] <- "Variable Sources"
+```
+
+```{r, eval = FALSE, echo = FALSE}
+knitr::kable(variable_sources_df)
+```
+
+
+### Assumptions {-}
+
+1. The variable `cases` is computed by taking the natural log of the total number of Covid confirmed cases per month by state. The natural log of 0 is undefined. Therefore, it is assumed that ln(0) is 0, ie. the growth rate of covid is 0 when the month is recorded to have no new confirmed cases in that month.
+
+2. The variable `older_pop` is computed by dividing the senior population and total population in different months of the state. United States Census Bureau has provided a projected annual growth rate for total population and senior population. Here it is assumed that the growth rate is constant over the 10 months period.
+
+### Basic Descriptive Statistics of the dataset {-}
+$$\\[1pt]$$
+
+```{r ggpairs, eval = TRUE, echo = FALSE, message = FALSE, warnings = FALSE, fig.align='center', fig.cap = "Distribution of variables of interest", fig.pos = 'h'}
+GGally::ggpairs(df[, c('cases_log','avg_temp','uninsured', 'older_pop','quarantine', "democrat")], 
+  columns = c(1:5),
+  mapping = ggplot2::aes(colour=democrat),
+  upper = list(continuous = "points", combo = "facethist", 
+  discrete = "facetbar", na ="na"), lower = list(continuous = GGally::wrap("cor", size = 2), 
+  combo = "box_no_facet", discrete = "facetbar", na ="na")) + 
+  ggplot2::scale_colour_manual(values = c("firebrick1", "dodgerblue2")) + 
+  ggplot2::scale_fill_manual(values = c("firebrick1", "dodgerblue2"))
+``` 
+
+From the diagonal graphs in figure \@ref(fig:ggpairs), we can see that `avg_temp`, `uninsured` and `older_pop` seems to follow a normal distribution.
+
+
+```{r heatmap, eval = TRUE, echo = FALSE, fig.height = 8, fig.align='center', fig.cap = "Heatmap of Covid growth rate of different states in 2020"}
+heatmapdf <- df3[df3$month >= 3, c("month", "state", "cases_log")]
+heatmapdf$state <- factor(heatmapdf$state)
+heatmapdf$month <- factor(heatmapdf$month)
+
+ggplot(heatmapdf, aes(month, state, fill = cases_log)) + geom_tile() + 
+  scale_fill_gradient(low="green", high="red") + labs(x = "Month", y = "State")
+```
+
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = FALSE, message = FALSE, warnings = FALSE}
+knitr::kable(summary(df5), booktabs = TRUE, caption = "This is the table caption") %>% kableExtra::kable_styling(latex_options = "scale_down")
+``` 
+
+## Econometric Strategy {-}
+
+### Model: {-}
+
+Since number of covid confirmed cases grew rapidly in 2020, therefore we are more interested in its growth rate in different months by state. Other than that, the scatter plots in the first row of figure \@ref(fig:ggpairs) shows that `avg_temp`, `uninsured` and `older_pop` likely have a linear relationship with `cases`. Therefore, a multiple variable log-linear regression model is being used to evaluate the factors contributing to the spread of Covid in US. It is assumed that all observations are independent and identically distributed and the expected value of the error term given X is zero, so as to obtain unbiased, consistent and efficient estimates.
+
+### Hypotheses & Expectations: {-}
+$H_0$: Average temperature, state’s uninsured rate, percentage of older population, and enforcement of travel restrictions have no relationship, ie. are not factors contributing to the spread of Covid-19 in the US.
+
+$H_1$: Average temperature, state’s insured rate, percentage of older population, and enforcement of travel restrictions have a relationship, ie. are factors contributing to the spread of Covid-19 in the US.
+
+$$\\[0.5pt]$$
+
+### Expectations: {-}
+
+According to the scatter plots in the first row of figure \@ref(fig:ggpairs), `avg_temp` and `uninsured` have a positive relationship with `cases`. It is expected that the higher the average temperature and uninsured rate will lead to a higher covid growth rate. However, the data of `older_pop` is a little dispersed. It is hard to tell from the scatter plot if percentage of older population will have a positive or negative with covid growth rate.
+
+### Mutlicollinearity, Heteroskoskasticity, Omitted variable biased and/or data limitations: {-}
+
+### 1. Mutlicollinearity & Heteroskoskasticity: {-}
+
+To avoid the problem of mutlicollinearity and heteroskoskasticity in our model, we computed VIF values of regression variables and checked the correlation between the variables, as well as performed some regression diagnostic plots, like Residual vs fitted and Scale-Location plot, to help checking for such issues in our model. None of the above issues were found after we performed the checkings.
+
+### 2. Omitted variable: {-}
+
+Excluding precipitation will cause omitted variable bias, because of the following:
+
+1. Precipitation is correlated with the regressor `avg_temp` - as average temperatures at the Earth's surface rise, more evaporation occurs, which, in turn, increases overall precipitation. Therefore, a warming climate is expected to increase precipitation in many areas. 
+
+2. Precipitation is a determinant of the growth rate of Covid confirmed cases - precipitation boosts the ‘stay-home’ rules and and lower the opportunity of virus exposure.^[4](https://www.health.harvard.edu/diseases-and-conditions/preventing-the-spread-of-the-coronavirus)^
+
+The omitted variable "precipitation" was being considered. It was being added in the multiple variable log-linear regression model as an additional regressor so as to overcome omitted variable biased.
+
+### Alternative model:  {-}
+
+```{r ggpairs2, eval = TRUE, echo = FALSE, message = FALSE, warnings = FALSE, fig.height = 4, fig.cap = "Distribution of variables of interest with cases as the independent variable"}
+GGally::ggpairs(df[, c('cases','avg_temp','uninsured', 'older_pop','quarantine', "democrat")], 
+  columns = c(1:5),
+  mapping = ggplot2::aes(colour=democrat),
+  upper = list(continuous = "points", combo = "facethist", 
+  discrete = "facetbar", na ="na"), lower = list(continuous = GGally::wrap("cor", size = 2), 
+  combo = "box_no_facet", discrete = "facetbar", na ="na")) + 
+  ggplot2::scale_colour_manual(values = c("firebrick1", "dodgerblue2")) + 
+  ggplot2::scale_fill_manual(values = c("firebrick1", "dodgerblue2"))
+``` 
+
+Other alternative model, like non-linear multi-variable polynomial regression model was being considered as well. From the scatter plots in the first row of figure \@ref(fig:ggpairs2), it shows that `avg_temp` and `uninsured` likely have an exponential relationship with `cases`. Therefore, even though the non-linear multi-variable polynomial regression model result has a high chance of being reasonable, it is not ideal to have big standard errors to construct confidence intervals. As a result, multi-variable log-linear regression model was eventually chosen as the optimum model to evaluate the topic. 
+
+
+## Results:  {-}
+
+### Multi-variable Log-linear regression model results:  {-}
+
+```{r, eval = TRUE, echo = FALSE}
+fit1 <- lm(df$cases_log~(df$avg_temp+df$precipitation+df$uninsured+df$older_pop+df$quarantine))
+```
+
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+summary(fit1)
+```
+
+###  Interpret all the statistically significant predictors: {-}
+
+From the multi-variable log-linear regression model, we can see that the statistically significant predictors of covid growth rate are average temperature, uninsured rate, older population and if the state enforces travel restrictions.  When the respective predictors are statistically significant, it means that we can reject the null hypothesis of "the variables and covid growth rate do not have relationship between one another" at a decent level of confidence. Thus, we have evidence to believe that the estimates are good. 
+
+### Interpret each coefficient’s p-value: {-}
+
+The p-values of those statistically significant predictors have numerical values close to 0, ie. very small. It indicates the probability of getting the a value as extreme as the respective t value is very small. Say we have an alpha value of 0.05, we reject the null hypothesis because their respective p-values are smaller than 0.05. It means that with 95% confidence, we reject the null hypothesis and there are evidence to support the alternative hypothesis. 
+
+### Interpret the adjusted R-Square: {-}
+Since adjusted R square is 0.3606, it means that 36.06% of the actual variation is explained by the model. 
+
+### Interpret of coefficients: {-}
+
+1. For every fahrenheit increase in average temperature, covid growth rate increases by 4.98%.
+
+    Meanwhile different academic papers have big debates over the effect of temperature to the spread of covid. Some used the US covid date from January to April of 2020 and concluded that majority of the cases were found to be reported in states experiencing cold temperature between 4 and 11 °C.^[5](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7194548/#bb0050)^ Some conducted experiments in laboratory environment, which temperature was the only variable contribute to the growth of coronavirus in the experiment. The research results have found out coronavirus growth rate peaks in colder conditions.^[6](https://www.sciencedaily.com/releases/2020/11/201102155409.htm)^
+
+    However, the real life data collected were not conducted in laboratory environment. There are human factors adding to the temperature condition. For example, weather influences the environment in which the coronavirus must survive before infecting a new host. But it also influences human behavior and mobility, which moves the virus from one host to another. 
+It is believed that higher temperature flavors outdoor human movements and further foster the spread of coronavirus. Therefore, having a positive coefficient for B1 is totally reasonable. 
+
+2. For every % increase in uninsured rate, covid growth rate increases by 5.30%. 
+
+    Medical expenses with insurance are costly in US. It is even more expensive without insurance.^[7](https://jamanetwork.com/journals/jama/article-abstract/192908)^ For many Americans, a trip to the doctor hinges on whether they can afford to go, rather than if it’s a medical necessity. Over the past year, 22% of Americans say they have avoided some of the medical expenses by skipping doctor visits, medications, vaccinations, annual exams because of the expense.^[8](https://www.cnbc.com/2020/03/11/nearly-1-in-4-americans-are-skipping-medical-care-because-of-the-cost.html)^ It is believed that people having symptoms of Covid concern it would be too expensive to get treated, and thus delay seeking medical attention. This ultimately increases the chances of moving the virus from one host to another.^[9](https://www.acpjournals.org/doi/full/10.7326/M20-1491)^
+
+3. For every % increase in older population, covid growth rate decreases by 14.23% 
+
+    Academic papers have big debates over whether older population has a higher chance of getting covid or not, and thus ultimately contribute to the covid growth rate if the state has a high percentage of senior population. Some stated from the physical point of view that older people don't have as strong an immune system so they are more vulnerable to infectious disease. They’re also more likely to have conditions such as heart disease, lung disease, diabetes or kidney disease, which weaken their body’s ability to fight infectious disease.^[10](https://www.health.harvard.edu/diseases-and-conditions/if-you-are-at-higher-risk)^Some acknowledged the physical reason, but stated from the social point of view that a lot of the seniors have isolation or mobility challenges. So because they're isolated, they can't get around for basic necessities or even have social gatherings.^[11](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7288963/)^
+
+    According to more academic papers that were released lately, covid impacts all ages, including kids. It seems that age is no longer causing a debate towards covid growth rate. However, there are human factors adding to the age condition. As mentioned above, many seniors have isolation or mobility challenges. Unlike the young and mid age that are active to go to school and/work, seniors compared to have lower chance to be in contact with others that they have little chance in getting infected, which contribute to a negative coefficient in older_pop.
+
+4. When state enforces travel restrictions in the particular month, covid growth rate decreases by 126.48%. 
+
+    Last but not least, acedemic papers have diverse conclusions in whether enforcement of travel restrictions is effective for reducing the spread of COVID-19. Some academic papers suggested that although President Trump signed an order banning most legal immigration from abroad in April. However, the bans didn’t and couldn’t stop all travel by U.S. citizens and legal permanent residents and thus travel restrictions fail to stop the spread of covid.^[12](https://www.cato.org/publications/commentary/how-travel-bans-failed-stop-spread-covid-19)^ Some suggested that the enoforcement of travel restrictions unflavors travels to plan their trip with the fear of affecting travel experience.^[13](https://www.news-medical.net/news/20200803/Study-evaluates-how-travel-bans-help-reduce-the-spread-of-COVID-19.aspx)^
+    
+    The enforcement of travel restrictions and drastic local/national lockdown measures are believed to be the main reasons that decreases public appetite for travelling. The finanical and time cost for 14 days of self-quarantine after arrivial is unflavoring human activities and thus contribute to a negative coefficient in quarantine.
+    
+
+
+### Check for Mutlicollinearity & Heteroskoskasticity {-}
+```{r, eval = TRUE, echo = FALSE, comment = "", fig.height=4, fig.cap = "Multi-variable Log-linear regression model plots", fig.pos = "h"}
+par(mfrow=c(2,2))
+plot(fit1)
+VIF(fit1)
+```
+
+\newpage
+### Observations: {-}
+
+1. From the Residuals vs fitted plot shows a horizontal straight line, which indicates that heteroscedasticity is not an issue. 
+2. Normal Q-Q plot shows a straight line, which indicates that the data follows normal distribution.
+3. The Scale-Location plot helps spotting if the residuals are spread equally along the predictor range. In echo with the Residuals vs fitted plot, it shows a horizontal straight line, which indicates that heteroscedasticity is not an issue. 
+4. Correlation and VIF of all dependenet variables have values between 0.1 to 0.3 and 1 to 1.2 respectively, which indicates that multicollinearity unlikely exists in the model. 
+
+### Note:  {-}
+Variance inflation factor (VIF) is a measure of the amount of multicollinearity in a set of multiple regression variables. A value higher than 10 indicates high correlation. 
+
+
+### Confidence Intervals: {-}
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+confint(fit1)
+```
+
+The confidence intervals for all coefficients at 95% significance level are computed above. It means that we are 95% confident that the respective confidence interval contains the true mean of the population.
+
+\newpage
+
+## Comparision with various models {-}
+$$\\[1pt]$$
+
+### 1. Mutli-variable non-linear polynomial regression model  {-}
+
+```{r, eval = TRUE, echo = FALSE, comment = "", fig.cap = "Multi-variable non-linear polynomial regression model plots"}
+fit2 <- lm(cases ~ exp(avg_temp) + uninsured + older_pop + quarantine, data = df)
+summary(fit2)
+```
+
+Other non linear model, like non-linear multi-variable polynomial regression model was being considered as alternative model. However, it is not ideal to have big standard errors to construct confidence intervals. As a result, multi-variable log-linear regression model was eventually chosen as the optimum model to evaluate the topic. 
+
+### 2. Subset one third of the 49 states in US  {-}
+$$\\[1pt]$$
+Further investigation was done to see if the multi-variable log-linear regression model provides the same statistically significant results. By using R to subset one third of the 49 states in US at random and run the same non-linear model, the results are as follow: 
+
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+set.seed(18)
+sample_states <- sample(unique(df$state), round(length(unique(df$state))/3))
+df_select <- subset(df, df$state %in% sample_states)
+```
+
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+fit3 <- lm(df_select$cases_log~(df_select$avg_temp+df_select$precipitation+df_select$uninsured+df_select$older_pop+df_select$quarantine))
+summary(fit3)
+```
+
+From the above, we can see that `avg_temp`, `uninsured`, `older_pop` and quarantine remain statistically significant in this subset model. However, the sample size shrunk to about 163 observations. This increases the margin of error, which, in return, increases the sensitivity of the regression model. 
+
+
+### 3. Subset the states according to political stance {-}
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+df_d <- subset(df,df$democrat == 1)
+df_r <- subset(df,df$democrat == 0)
+fit_d <- lm(df_d$cases_log~(df_d$avg_temp+df_d$precipitation+df_d$uninsured+df_d$older_pop+df_d$quarantine))
+fit_r <- lm(df_r$cases_log~(df_r$avg_temp+df_r$precipitation+df_r$uninsured+df_r$older_pop+df_r$quarantine))
+```
+
+### (a) Result of Democrat States: {-}
+
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+summary(fit_d)
+```
+
+### (b) Result of Republican States: {-}
+
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+summary(fit_r)
+```
+
+From the above results, we can see that the only variable that remains statistically significant for both Democrat and Republican states is `avg_temp`. The variable quarantine becomes only statistically significant in Republican states, but not in Democrat States. Meanwhile, `uninsured` and `older_pop` are only statistically significant in either Republican or Democrat states. 
+
+Here are some graphs showing the comparison between the two groups below. 
+
+```{r logcase-boxplot-by-political, eval = TRUE, echo = FALSE, fig.align='center',fig.asp = 0.7, fig.width = 5, fig.cap = "Boxplot of log of total number of cases by political stance"}
+boxplotdf <- df[c("p_ratio", "cases_log")]
+boxplotdf$p <- factor(car::recode(floor(boxplotdf$p_ratio),"0='Republican';else='Democrat'"), c("Republican", "Democrat")) 
+boxplotdf <- boxplotdf[c("p", "cases_log")]
+names(boxplotdf) <- c("PoliticalStance", "cases_log")
+e <- ggplot(boxplotdf, aes(x = PoliticalStance, y = cases_log, fill = PoliticalStance)) + geom_boxplot() + labs(x="Political Stance",y="Log of total number of cases") + theme(legend.position="none") + ggplot2::scale_colour_manual(values = c("firebrick1", "dodgerblue2")) +  ggplot2::scale_fill_manual(values = c("firebrick1", "dodgerblue2"))
+e
+``` 
+
+The boxplot in figure \@ref(fig:logcase-boxplot-by-political) shows the distribution of covid growth rate by political stance. Despite of the fact that the boxplot does not show big difference between the group, the scale of the y-axis, ie. covid growth rate was taking by the natural log of number of new confirmed covid cases per month by state. The difference between the the length of boxplot was greatly reduced by the natural log, and thus, Republican states have higher covid growth rates than Democrat states.
+
+```{r scatter-plot, eval = TRUE, echo = FALSE, fig.align='center',fig.asp = 0.6, fig.width = 6, fig.cap = "Log cases verse average temperature by travel restrictions enforcement"}
+scatterplotdf <- df[c("avg_temp", "cases_log", "democrat")]
+scatterplotdf$democrat <- factor(scatterplotdf$democrat)
+ggplot2::ggplot(scatterplotdf, ggplot2::aes(x=avg_temp, y=cases_log, color=democrat)) +
+  ggplot2::geom_point() + ggplot2::labs(color = "Political\nstance",
+  x = "Average Temperature in F", y = "Log of Total Number of Cases") +
+  ggplot2::scale_colour_manual(values = c("firebrick1", "dodgerblue2")) + 
+  ggplot2::scale_fill_manual(values = c("firebrick1", "dodgerblue2"))
+``` 
+
+The scatter plot in figure \@ref(fig:scatter-plot) shows covid growth rate with respect to average temperature by political stance. In general, average temperature increases with covid growth rate regardless of the state's political stance.
+
+```{r barchart, eval = TRUE, echo = FALSE, fig.align='center', fig.asp = 0.6, fig.width = 6, cache = TRUE, fig.cap = "Total cases by travel restriction enforcement by political stance"}
+barchartdf <- df[c("p_ratio", "quarantine", "cases")]
+barchartdf$p <- factor(car::recode(floor(barchartdf$p_ratio), 
+                "0='Republican';else='Democrat'"), c("Republican", "Democrat"))
+barchartdf$quarantine <- factor(car::recode(barchartdf$quarantine, 
+                         "0='No';1='Yes'"), c("No", "Yes"))
+barchartdf <- aggregate(barchartdf$cases, list(PoliticalStance = barchartdf$p, 
+              Quarantine = barchartdf$quarantine), sum)
+names(barchartdf) <- c("PoliticalStance", "Quarantine", "Cases")
+barchartdf <- barchartdf[rep(c(1:nrow(barchartdf)), barchartdf$Cases), ]
+barchartdf %>%
+  ggplot(aes(x = Quarantine, fill = Quarantine)) +
+  geom_bar() +
+  facet_wrap(~PoliticalStance) +
+          xlab("Enforcement of travel restrictions") +
+          ylab("Total number of cases") + 
+          theme(legend.position="none") 
+```
+
+The bar chart in figure \@ref(fig:barchart) shows that total number of `cases` by political stance and travel restrictions. In Republican states, the total number of `cases` are significantly fewer in months that travel restrictions were enforced than were not enforcement; whereas in Democrat states, total number of `cases` are fairly similar in months that travel restrictions were enforced and not enforcement. 
+
+### Logit Regression:  {-}
+$$\\[1pt]$$
+```{r, eval = TRUE, echo = FALSE}
+newdf <- df3
+newdf$cases_binary <- ifelse(df3$cases_log > median(df3$cases_log), 1, 0)
+d_newdf <- newdf[newdf$democrat == 1, ]
+r_newdf <- newdf[newdf$democrat == 0, ]
+
+d_model <- glm(cases_binary ~ avg_temp + precipitation + uninsured + older_pop + quarantine, data = d_newdf, family = "binomial")
+r_model <- glm(cases_binary ~ avg_temp + precipitation + uninsured + older_pop + quarantine, data = r_newdf, family = "binomial")
+```
+
+### (a) Result of Democrat States: {-}
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+summary(d_model)
+```
+
+### (b) Result of Republican States: {-}
+```{r, eval = TRUE, echo = FALSE, comment = ""}
+summary(r_model)
+```
+
+Logit regression was performed to model the probability of covid growth rate is higher than its median of the respective political stance group - with 0 indicating that the covid growth rate of that month is not higher than the respective political stance group's median covid growth rate, and 1 indicating that the covid growth rate of that month is higher than the respective political stance group's median covid growth rate. 
+
+Similar results were obtained in both models considering statistically significant variables: 
+
+1. The independent variable `avg_temp` is statistically significant in both Republican and Democrat states. The positive coefficient of `avg_temp` indicates that average temperature and covid growth rate have a positive relationship, ie. the likelihood of rapid covid growth increases as average temperature increases. Also, the magnitude of the coefficient `avg_temp` in both Republican and Democrat states are very close.
+
+2. The independent variable quarantine remains only statistically significant in Republican states, but not in Democrat States. The negative coefficient of quarantine indicates that the enforcement of travel restrictions and covid growth rate have a negative relationship, ie. the likelihood of rapid covid growth decreases when there is enforcement of travel restrictions. Also, there is a huge difference in the magnitude of the coefficient quarantine in Republican and Democrat states.
+
+To further elaborate, the probability that covid growth rate is higher than its median of all Republican states with and without the enforcement of travel restrictions at average temperature of 70 Fahrenheit and precipitation of 5 inches are 0.303123 and 0.648233 respectively. Therefore, 
+
+1. The probability that covid growth rate is higher than its median of all Republican states increases by 0.34511028446 percentage points if travel restrictions were not enforced. 
+2. The probability that covid growth rate is higher than its median of all Republican states increases by 113% if travel restrictions were not enforced. 
+
+# Limitations & Improvments {-}
+
+### Limitations: {-}
+
+1. For OLS, it is assumed that all observations are independent and identically distributed. However, there are a lot of human         factors that contribute to the growth rate of covid. For example, a person in the household caught covid and accidentally passed onto his/her family members or similar scenario in common work place, which, in turn causes bias estimators.
+
+2. For OLS, it is also assumed that the expected value of the error term given X is zero. As mentioned above, there are a lot of human factors that contribute to the growth rate of covid.  Those human factors are hard to measure and get data on, thus it is believed that the error term is not zero and will ultimately causes bias estimators.
+
+3. The dataset only covers 10 months of covid data in 49 states of US. However, 95% of the states do not have covid confirmed  cases in both January and February in 2020. Therefore, a relatively small data size of 400 was being used for the regression models. 
+
+4. While performing internal validity,  the dataset was further split according to two categories, Democrat or Republican states. In echo with the previous limitation, the data size will become even smaller after categorizing for regression models. This enhances the linear model and logistic regression model to become sensitive to data changes.
+
+5. In the regression models, it is assumed that uninsured rate contribute to covid growth rate. However, covid growth rate also contributes to uninsured rate as well. As number of covid cases increases, it is expected to have stricter local and national lockdowns. This leads to high unemployment rate due to getting laid off from various greatly impacted industries, like catering and tourism, and thus increases the percentage of people being uninsured after losing the health insurance granted through employment. The assumption causes simultaneous casualty bias. 
+
+### Improvements:  {-}
+
+1. The model can be improved by a larger dataset, which covers a longer period of time. 
+
+2. Implanting instrumental variable can eliminate the effect of simultaneous casualty bias as mentioned in limitation 5. One possible effective instrumental variable is the percentage of people getting emergency health insurance from state government for their lost of health insurance due to getting unemployed at covid times. However, this policy varies by state and the data is not available at the moment. 
+
+3. In some countries where they have very few covid cases, like Hong Kong and Taiwan, the governments have information about human factors that were previously discussed in the limitation. For example, family members of a covid carrier, attended the same 60-people-gathering as the covid carrier etc. The age, gender and the detail local/ international travel information of the covid carrier are also included. Those information about human factors are believed to play a big role in conducting a better model.
+
+# Conclusion {-}
+
+In gereral, average temperature, uninsured rate, percentage of older population and if the state enforces any travel restrictions or not are statistically significant factors contributing to spread of it in US. Those factors vary in being statistically significant in Democrat and Republican states. It is important that states with different political stance to learn from each other so as to stop the spread of covid.
+
+\newpage
+
+# References {-}
+1.	University of Texas at Austin. "Hot or cold, weather alone has no significant effect on COVID-19 spread." ScienceDaily. ScienceDaily, 2 November 2020. <www.sciencedaily.com/releases/2020/11/201102155409.htm>. 
+$$\\[1pt]$$
+2.	Starfield B. Is US Health Really the Best in the World? JAMA. 2000;284(4):483–485. doi:10.1001/jama.284.4.483
+$$\\[1pt]$$
+3.	Gupta S, Raghuwanshi GS, Chanda A. Corrigendum to "Effect of weather on COVID-19 spread in the US: A prediction model for India in 2020" [Sci. Total Environ. 728 (2020) 1-8/138860]. Sci Total Environ. 2020;748:142577. doi:10.1016/j.scitotenv.2020.142577
+$$\\[1pt]$$
+4.	Mueller AL, McNamara MS, Sinclair DA. Why does COVID-19 disproportionately affect older people?. Aging (Albany NY). 2020;12(10):9959-9981. doi:10.18632/aging.103344
+$$\\[1pt]$$
+5.	Woolhandler S, Himmelstein DU. Intersecting U.S. Epidemics: COVID-19 and Lack of Health Insurance. Ann Intern Med. 2020 Jul 7;173(1):63-64. doi: 10.7326/M20-1491. Epub 2020 Apr 7. PMID: 32259195; PMCID: PMC7143156.
+$$\\[1pt]$$
+6.	Cowling BJ, Aiello AE. Public Health Measures to Slow Community Spread of Coronavirus Disease 2019. J Infect Dis. 2020;221(11):1749-1751. doi:10.1093/infdis/jiaa123
+$$\\[1pt]$$
+7.	Krisztin, T., et al. (2020) The spatial econometrics of the coronavirus pandemic. Letters in Spatial and Resource Sciences. doi.org/10.1007/s12076-020-00254-1.
+$$\\[1pt]$$
+8.	Lauer SA, Grantz KH, Bi Q, et al. The Incubation Period of Coronavirus Disease 2019 (COVID-19) From Publicly Reported Confirmed Cases: Estimation and Application. Ann Intern Med. 2020;172(9):577-582. doi:10.7326/M20-0504
+$$\\[1pt]$$
+9.	Megan Marples and Forrest Brown (2020) Covid-19 travel restrictions state by state <https://www.cnn.com/travel/article/us-state-travel-restrictions-covid-19/index.html>
+$$\\[1pt]$$
+10.	Ana LP Mateus a, Harmony E Otete b, Charles R Beck b, Gayle P Dolan c & Jonathan S Nguyen-Van-Tam (2020) Effectiveness of travel restrictions in the rapid containment of human influenza: a systematic review
+$$\\[1pt]$$
+11.	Dan Honig (2020) COVID-19 LIKELY TO WEIGH ON U.S. ELECTION TURNOUT, OUTCOMES
+$$\\[1pt]$$
+12.	Megan Leonhardt (2020) Nearly 1 in 4 Americans are skipping medical care because of the cost
+$$\\[1pt]$$
+13.	Kate Whiting (2020) An expert explains: how to help older people through the COVID-19 pandemic
+
+\newpage
+
+```{r glimpse-of-dataset-fulldata, eval = TRUE, echo = FALSE}
+options(width = 120)
+knitr::kable(df5, "pipe", caption = "A Glimpse of the dataset")
+```

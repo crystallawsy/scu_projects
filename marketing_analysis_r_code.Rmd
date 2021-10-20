@@ -1,0 +1,497 @@
+---
+title: "Marketing Analysis Project Report"
+subtitle: "Session 2 Group 7"
+author: 
+- "Anita Banne"
+- "Sui Ying Crystal Law"
+- "Qian Qao"
+output: pdf_document
+---
+
+```{r eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+library("ggplot2")
+library("readxl")
+library("dplyr")
+library("tidyr")
+library("plotly")
+library("RColorBrewer")
+library("dplyr")
+library("tidyverse")
+library("data.table")
+library("ROCR")
+library("ROSE")
+library("cluster")
+library("factoextra")
+options(digit=4)
+
+data <- fread('~/Desktop/marketing_project_data_cleaned_positioned.csv')
+df = data
+df_demo = df %>% select(c(3,6:8))
+df_1 = df %>% select(c(3:10))
+df_2 = df %>% select(c(11:20))
+df_buy = df %>% select(9:18)
+df_spend = df %>% select(11:18)
+df_dummies = df %>% select(c(3,6:8,21:29,20))
+df_dummies2 = df%>% select(c(3,7:8,30:32,20))
+
+data3 <- fread('~/Desktop/marketing_project_data_cleaned_positioned2.csv')
+df3 = data3
+df_dummies3 = df3 %>% select(c(4:6,17:18,33:35,37:40, 42:43,32))
+df_dummies4 = df3 %>% select(c(4:6,17:18,33:35,37:40,42:43,32,31,10,19,20,21:31,3))
+```
+
+
+## Introduction
+$$\\[1pt]$$
+
+
+The dataset evaluated in this project belongs to an online superstore that sells wine, fruit, meat, fish, sweets and gold products. The company has previously conducted five marketing campaigns. But the accepting rate to the campaigns have been low, which only 20% of the customers accepted marketing campaigns before. 
+
+Due to the low acceptance rate of marketing campaigns, the business question that we are try to answer is: how to increase the next marketing campaign’s efficiency. In this report, we are going to show how we come up with strategies to find our target customers.We believe that targeting the right customers not only will provide a significant increase in customer engagement towards marketing campaigns, but it will also ultimately leads to an increment in profit.
+
+The business question will be addressed using the Marketing Segmentation and Clustering Analysis, as well as Targeting and Binary Logit model.
+
+
+## Data Description
+$$\\[1pt]$$
+```{r glimpse-of-dataset, eval = TRUE, echo = FALSE}
+options(width = 120)
+knitr::kable(head(df_1,15), "pipe", caption = "A Glimpse of the dataset")
+```
+
+\newpage
+
+```{r, eval = TRUE, echo = FALSE}
+options(width = 120)
+knitr::kable(head(df_2,15), "pipe")
+```
+
+**Note:** The above only shows the first 15 lines of the dataset. 
+$$\\[1pt]$$
+
+### Variable Desciption
+
+|    Variable      | Variable Type |     Variable Description                                                   |
+| -----------------| --------------| ---------------------------------------------------------------------------|
+| `ID`             |  Discrete     | Unique ID number of the customer                                           |
+| `Age`            |  Discrete     | Age of the customer                                                        |
+| `Education`      |  Categorical  | Education level of the customer                                            |
+| `Marital_Status` |  Categorical  | Marital status of the customer                                             |
+| `Kid`            |  Discrete     | Number of young children in customer’s household                           |
+| `Teen`           |  Discrete     | Number of teenagers in customer’s household                                |
+| `Length`         |  Discrete     | Number of days since the customer's first purchase                         |
+| `Recency`        |  Discrete     | Number of days since the customer's last purchase                          |
+| `MntWines`       |  Discrete     | Amount spent on Wine products by the customer in the last 2 years          |
+| `MntFruits`      |  Discrete     | Amount spent on Fruit products by the customer in the last 2 years         |
+| `MntMeat`        |  Discrete     | Amount spent on Meat products by the customer in the last 2 years          |
+| `MntFish`        |  Discrete     | Amount spent on Fish products by the customer in the last 2 years          |
+| `MntSweet`       |  Discrete     | Amount spent on Sweet products by the customer in the last 2 years         |
+| `MntGold`        |  Discrete     | Amount spent on Gold products by the customer in the last 2 years          |
+| `NumDeals_P`     |  Discrete     | Total number of purchases made by customer with discount in last 2 years   |
+| `NumP`           |  Discrete     | Total number of purchases made by the customer in the last 2 years         |
+| `NumWebVisit`    |  Discrete     | Number of visits to company’s website in the previous month                |
+| `Accepted`       |  Discrete     | Binary indicator if the customer accepted marketing campaign before        |
+
+\newpage
+
+### Basic Descriptive Statistics of the dataset 
+$$\\[1pt]$$
+Size of the dataset: 
+```{r, eval = TRUE, echo = FALSE}
+dim(df)
+```
+The dataset consists of 2214 rows and 20 columns.
+
+$$\\[1pt]$$
+Structure of the dataset:
+```{r, eval = TRUE, echo = FALSE}
+str(df)
+```
+
+
+\newpage
+
+## Marketing Methodologies:
+$$\\[1pt]$$
+In order to develop strategies to target the right customers, the below methodologies are used to solve the business question:\ 
+
+  - First, Clustering Analysis: Group customers into segments so that all those in the same segment are similar, whereas those in different segments are different.\ 
+  
+  - Second, Logistic Regression: Create a model that can identify statistically significant demographics variables of customers accepting marketing campaigns, and thus to calculate propensity score to find the target customers.
+  
+$$\\[1pt]$$
+
+## Data Preprocessing
+$$\\[1pt]$$
+Problems we may find with the data:
+
+  - For a given category, it is possible that everyone spent the same amount, ie. no variation. No variation would cause problem to customer segmentation as we will not be able to segment people using a variable that indicates everyone is the same.\ 
+  
+  - Some categories might have greater variations in spending than others. The statistical method tend to give greater weight to those categories with larger variations, even though they may not be more informative about consumer preferences than categories with small variation. 
+  
+    Thus, checking the variance of the variables and normalization are necessary before we move onto the analysis.
+    
+  - Categorical variables do not have numerical values. Therefore, dummies have to be generated before conducting analysis.
+  
+$$\\[1pt]$$
+
+##### Variance of the spending variables:
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = TRUE}
+options(digits=4)
+spend_names = names(df_spend)
+diag( var( df_spend[, ..spend_names]) )
+```
+From the above table, there are significant differences in the column values, ie. the variances of the variables are all bigger than zero.\
+
+Since the variance of some columns are significantly bigger than the other columns. In order to avoid statistical method from giving greater weight to those categories with larger variations, all the behavioral variables need to be normalized before conducting Clustering Analysis. Normalization turns all variables to have an average value of zero and a variance of one. Thus, the varibles will contribute to the segment of customers equally after normalization.
+
+$$\\[1pt]$$
+
+##### Normalize all the spending variables:\ 
+
+$$\\[1pt]$$
+The below shows the first 15 rows after performing normalization:\ 
+
+```{r, eval = TRUE, echo = TRUE}
+spend_names_z = paste0(spend_names, "_z")
+df_spend[, (spend_names_z) := lapply(.SD, function(x) (x- mean(x))/sd(x)), 
+         .SDcols=spend_names ]
+df_spend_z = df_spend %>% select(9:16)
+head(df_spend_z,15)
+```
+
+$$\\[1pt]$$
+Check if normalization was correctly conducted:\ 
+
+  - The column means are computed as follow: 
+```{r, eval = TRUE, echo = TRUE}
+colMeans( df_spend[, ..spend_names_z] )
+```
+
+From the above, we can see that all the column means are very small, which are considered as zero. Note that computer does not have absolute zero. A number that has 10 to the power -17 is small enough to be considered as zero in statistical software.\ 
+
+  - The column variances are computed as follow: 
+```{r, eval = TRUE, echo = TRUE}
+diag( var( df_spend[, ..spend_names_z] ) )
+```
+The variance of all behavioral variables equal to 1 after normalization.\
+
+$$\\[1pt]$$
+\newpage
+
+## Clustering Analysis
+
+$$\\[1pt]$$
+
+##### Basis Variables:
+
+  - The amounts spent on different category of products, as well as the number of deal products and total number of products purchased are the basis variables since they provide a good measure of consumer behavior. Thus, a group of customers who are similar based on the fact that they have similar spending habits and product preferences.
+  
+$$\\[1pt]$$
+
+##### K-Means with 3 segments:
+
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = TRUE}
+set.seed(42)
+km <- kmeans( df_spend[, ..spend_names_z], 3)
+df_spend[, seg := km$cluster]
+cbind(km$size,km$centers)
+```
+
+$$\\[1pt]$$
+The results of the 3 segments K-means shows that\
+
+  - The first segment is the largest, which consists of customers who are not very active in any of the 6 product categories, including wine, fruits, meat, fish, sweets and gold. In addition, this segment of customers purchased the least amount of products from the company in the last 2 years.
+  
+  - The second segment has comparable size as the third segment. This segment consists of customers who purchase the most out of all product categories considering amount spending and total number of products bought. They are also the least interested in making deals purchases out of the three segments of customers. 
+  
+  - The third segment has size about half of the first segment, ie. about 500 customers. Having a value of `NumP_z` that ranks the second out of the three segments illustrates that customers in this segment are fairly active in product purchase. This group of customers are particularly interested in making deals purchases among all the segments. Also, they are more interested in wine and gold products than fruits, meat, fish and sweet products.
+  
+\newpage
+
+##### K-Means with 4 segments:
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = TRUE}
+set.seed(42)
+km <- kmeans( df_spend[, ..spend_names_z], 4)
+df_spend[, seg := km$cluster]
+cbind(km$size,km$centers)
+```
+
+The results of the 4 segments K-means shows that\
+
+  - The first segment is the largest, which consists of customers who are not very active in any of the 6 product categories, including wine, fruits, meat, fish, sweets and gold. In addition, this segment of customers purchased the least amount of products from the company in the last 2 years.
+
+  - The second segment consists of customers who purchase the most total number of products purchased out of the 4 segments. Customers in this segment are fairly active and are more interested in wine products than fruits, meat, fish, sweet and gold. 
+  
+  - The third segment is the smallest. Having a value of `NumP_z` that ranks the third out of the four segments illustrates that customers in this segment are fairly active in product purchase. This group of customers are particularly interested in making deals purchases among all the segments. Also, they are more interested in wine and gold products than fruits, meat, fish and sweet products.
+  
+  - The forth segment is the second smallest, which consists of customers who are very active in 5 out of the 6 product categories. The amount that this segment spent on fruits, meat, fish, sweets and gold are the highest among the four segments. Also, the total number of purchases that this segment made are comparable to that of the second segment, in which the customer made the most number of purchases in last 2 years. Customers in this segment are also the least interested in making deals purchases out of the four segments of customers. 
+  
+$$\\[1pt]$$
+
+### Choose the optimize K:
+
+Comparison between 3 and 4 segments of K-means segmentation\
+  
+Customers in the second and forth segments make the most number of purchases and are the least interested making deals purchases among the 4 segments. On the other hand, the amount that customers in these two segments spent on all of the 6 product categories is the highest among all segments. Therefore, K-means with 3 segments is adequate to differentiate customers spending behaviors. 
+
+\newpage
+
+### Demographics information of the segments
+
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = FALSE}
+behavior_names = names( df[, 11:18, with=FALSE ] ) 
+demo_names = names( df[,c(3,6:8), with=FALSE])
+
+k=3
+set.seed(46)
+km1 = kmeans(df[, ..behavior_names],k)
+df[, seg := km1$cluster]
+behavior_names_z = paste0(behavior_names, "_z")
+df[,(behavior_names_z) := lapply(.SD, function(x) (x- mean(x))/sd(x)), 
+   .SDcols=behavior_names]
+km1 = kmeans(df[, ..behavior_names_z],k) 
+df[, seg := km1$cluster]
+df[, .N, seg][order(seg)]
+```
+
+The below are the 3 segments according to their spending behavior:
+```{r, eval = TRUE, echo = TRUE}
+b=df[, lapply(.SD, mean), .SDcols = behavior_names_z, seg][order(seg)]
+print(t(b))
+```
+
+The demographic information of the 3 segments are as follow:
+```{r, eval = TRUE, echo = TRUE}
+b=df[, lapply(.SD, mean), .SDcols = demo_names, seg][order(seg)]
+print(t(b))
+```
+
+$$\\[1pt]$$
+
+
+Considering all the numerical demographics variables, we can see that there is no big difference in their average `Age` across customers in 3 segments, with an average age between 43 to 48 years old.
+
+Among the 3 segments, customers in segment 2 has the highest average annual income, ie. about 70,000 dollars. Customers in segment 1 earns the least out of the 3 segments, with average annual income about 36000 dollars.
+
+On the other hand, in terms of number of kids and teens in the household. Customers in segment 2 has the least average number of kids and teens among the three segments, where as customers in segment 1 have the highest average number of kid and teens.
+
+From the above numerical demographics information of the 3 segments, we can see that the 3 segments are most different in Income, Kid and Teen.
+
+$$\\[1pt]$$
+
+## Target and Binary Logit Model
+
+$$\\[1pt]$$
+
+After conducting customer segmentation, we conducted logistic regression with customers’ demographics information to see what are the statistically significant predictors of them accepting marketing campaigns. Other than `Age`, `Income`, `Kid` and `Teen` that we just discussed, we also added `Education` and `Marital_Status` in the model.
+
+In order to include the categorical variables into the model, we have turned the values of each categorical columns into dummy variables. For example, `Education_Basic`, `Education_Graduation`, `Marital_Status_Married`, which take values of 0 and 1. 
+
+The below shows a glimpse of the demographics variables after changing the categorical columns into dummy variables.\ 
+```{r, eval = TRUE, echo = TRUE}
+str(df_dummies)
+```
+
+
+##### Results: 
+$$\\[1pt]$$
+```{r, eval = TRUE, echo = TRUE}
+d = data.frame(y=df_dummies[,13],df_dummies[,1:14])
+bl_result = glm(Accepted ~ Age + Income + Kid + Teen + Education_Basic +
+                Education_Graduation	+ Education_Master + 
+                  Marital_Status_Divorced +	Marital_Status_Married +
+                  Marital_Status_Single + Marital_Status_Together, 
+                data=d, family="binomial")
+summary(bl_result)
+logLik(bl_result)
+```
+
+$$\\[1pt]$$
+
+##### Alternative model 1:\ 
+$$\\[1pt]$$
+In this alternative model, the customers’ income levels are split into 3 categories, low, medium and high, which are obtained by breaking the range of `Income` into 3 group. Low corresponds to customers who have income ranging from 0 to 33.33 percentile; medium 33.33 to 66.7 percentile, and last but not least, high 66.7 to 100 percentile. Each of the income level column takes binary indicator of 0 and 1, with 1 representing their income is within the specified range of the column.
+
+ After breaking Income in 3 categories, the result is as follow:
+ 
+```{r, eval = TRUE, echo = TRUE}
+bl_result2 = glm(Accepted ~ Age + Income_High + Income_Medium + Kid + Teen + Education_Basic + 
+                   Education_Graduation + Education_Master + Marital_Status_Divorced + 
+                   Marital_Status_Married + Marital_Status_Single + Marital_Status_Together, 
+                   data=df, family="binomial")
+summary(bl_result2)
+logLik(bl_result2)
+```
+
+$$\\[1pt]$$
+
+##### Alternative model 2:\ 
+$$\\[1pt]$$
+In this alternative model, the customers' age are further split into 4 categories - `Ageless25`, `Age25_39`, `Age39_64`, `Age64plus`. Each of the age level column takes binary indicator of 0 and 1, with 1 representing their age is within the specified range of the column.
+
+```{r, eval = TRUE, echo = TRUE}
+bl_result3 = glm(Accepted ~ Ageless25 + Age25_39 + Age39_64 + Income_High +  Income_Medium + 
+                 Kid + Teen + Education_Basic +  Education_Graduation	+ Education_Master + 
+                Marital_Status_Divorced +	Marital_Status_Married +  Marital_Status_Single + 
+                  Marital_Status_Together, data=df3, family="binomial")
+summary(bl_result3)
+logLik(bl_result3)
+```
+
+##### Interpretation: 
+
+$$\\[1pt]$$
+
+We would like to to calculate the marginal impact of each variable. Holding all other variables constant, adding 1 to the designated variable, the probability changes are as follow: (only those statistically significant demographics variables are being evaluated below)
+
+  - Having high income increases the probability of accepting the marketing campaign by 32.52% compare to those who have low income.
+  
+  - Having medium income increases the probability of accepting the marketing campaign by 13.91% 
+  compare to those that have low income.
+
+  - For every number increase in `Kid`, the probability of accepting the marketing campaign decreases by 4.866%.
+  
+  - For every number increase in `Teen`, the probability of accepting the marketing campaign decreases by 5.63% 
+
+
+##### Out-of-sample fit of original data
+
+$$\\[1pt]$$
+
+```{r eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+df_dummies_train <- df_dummies4[1:1550,]
+df_dummies_test <- df_dummies4[1551:2214,]
+```
+
+
+```{r eval=TRUE, message=FALSE, warning=FALSE, include=FALSE}
+idTrn = 1:1550
+idTst = !(1:nrow(df) %in% idTrn)
+blTrn = glm(Accepted~., data=d, family="binomial", subset = idTrn)
+summary(blTrn)
+```
+
+```{r, eval = TRUE, include= FALSE}
+bl_result3 = glm(Accepted ~ Ageless25 + Age25_39 + Age39_64 +  Income_High + Income_Medium +
+                   Kid + Teen +  Education_Basic + Education_Graduation	+ Education_Master + 
+                   Marital_Status_Divorced +	Marital_Status_Married +  Marital_Status_Single +
+                   Marital_Status_Together, data=df3, family="binomial")
+summary(bl_result3)
+```
+
+```{r, eval = TRUE, include= TRUE}
+df_dummies[,fittedval:=bl_result3$fitted.values]
+a3=df_dummies[,.(mnfit=mean(fittedval)),by=Accepted]
+a3
+```
+
+We used our best logit model to calculate the propensity score of the customers. Propensity score measures the probability a customer is going to accept the marketing campaign. Among those who accepted, the model predicted average acceptance probability: 0.2920, which is only a little higher than the predicted average probability of those who did not: 0.1852. It is not a very good result. 
+
+$$\\[1pt]$$
+
+```{r eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+yActual = d[idTst,1]
+predTst = predict(blTrn, d[idTst,], type="response")
+Inlike = sum(log(predTst*yActual+(1-predTst)*(1-yActual)))
+```
+
+##### AUC Score
+
+$$\\[1pt]$$
+
+```{r, eval = TRUE, echo = TRUE}
+pred <- prediction(predTst,yActual)
+perf <- performance(pred,"tpr","fpr") 
+plot(perf,col="blue")
+perf <- performance(pred,measure="auc")
+print(paste("AUC= ", perf@y.values[[1]]))
+```
+
+The above graph shows the accuracy predicting the model using ROC curve. With an AUC = 0.46, the model is not predicting values very well. The x-axis of the graph shows false positive rate and the y-axis shows true positive rate. In this case, our model is predicting true positives and false positives at almost the same rate, which indicates our model has no predicting power at all.
+
+### Imbalanced data
+
+$$\\[1pt]$$
+
+The dataset contains 2 variables of a total of 2214 data points, which 1550 of them will be used as training data. `Accepted` is the response variable that takes value of `0` and `1`. The below  shows that the severity of imbalanced data occurs in this dataset.
+
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+table(df_dummies_train$Accepted)
+prop.table(table(df_dummies_train$Accepted)) 
+```
+
+With only about 20% of the customers accepted marketing campaigns before verses about 80% who have never accepted. The algorithm doesn’t get necessary information about those who have accepted marketing campaign before for accurate prediction. Therefore, it is necessary to balance the data before applying the algorithm.
+
+##### Applying over-sampling
+
+$$\\[1pt]$$
+
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+balanced_over <- ovun.sample(Accepted ~ ., data=df_dummies_train, method = "over" ,
+                             N=2460, seed=1)$data
+table(balanced_over$Accepted)
+```
+
+The solution that we used to deal with the imbalance data in our dataset is a package called “ROSE” in R. It helps with balancing the data using oversampling method, which duplicates the sample from the minority class. In this case, 1. After performing oversampling, the count of our 1s increases from 320 to 1230 and making our outcomes 1 and 0 having equal proportion.
+
+
+##### Propensity score of balanced data
+$$\\[1pt]$$
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+bl_over = glm(Accepted~ .,, family="binomial",data=balanced_over)
+balanced_over<- as.data.table(balanced_over)
+balanced_over[,fittedval :=bl_over$fitted.values]
+a2 = balanced_over[,.(mnfit=mean(fittedval)),by=Accepted]
+a2
+```
+
+After balancing the data, we used our logit model again to calculate the propensity score of the customers. This time, among those who accepted, the model predicted average acceptance probability: 0.6549, which is about 2 times than the predicted average probability of those who did not.
+
+##### Out-of-sample fit of balanced data
+$$\\[1pt]$$
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+pred.over <-predict(bl_over, newdata=df_dummies_test)
+roc.curve(df_dummies_test$Accepted,pred.over)
+```
+
+The above graph shows the accuracy predicting the model using ROC curve after balancing the data. With an AUC of about 0.8, the model is predicting values better than before we balanced the data. The x-axis of the graph shows false positive rate and the y-axis shows true positive rate. In this case, our model is predicting true positives at a faster rate than that of false positives.
+
+$$\\[1pt]$$
+\newpage
+
+## Target the right customers
+
+$$\\[1pt]$$
+
+After that we have set a threshold for propensity score of 0.5. Customers with propensity score of higher than 0.5 will be our target customers.
+
+The below are the first 10 individuals' Propensity Score:\
+
+```{r, eval = TRUE, echo = TRUE}
+bl_over$fitted.values[1:10]
+```
+
+Number of target customers in the dataset:\
+```{r, eval = TRUE, echo = TRUE}
+z = (bl_over$fitted.values > 0.5) 
+length(z[z== TRUE])
+```
+
+After computing all customers’ propensity scores in the dataset, we found out that about 45 percentage of the customers have propensity score of higher than 0.5, and therefore are our target customers. Previously, we only had about 20% of the customers accepting marketing campaigns. We believe that with the help of propensity score, it will help identifying target customers, further increase marketing campaign efficiency and ultimately increasing profit.
+
+$$\\[1pt]$$
+
+## Conclusion
+$$\\[1pt]$$
+We have conducted customer segmentation to identify 3 group of customers - active customers, fairly active customers and least active customers. Each of the segment is different in their spending habits and product preferences. 
+
+Other than that, we have created a logit model to calculate propensity score to target the right customers. We believe that with the help of propensity score, it will help identifying target customers, further increase marketing campaign efficiency and ultimately increasing profit.
